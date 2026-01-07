@@ -1,14 +1,24 @@
 #include "raylib.h"
 #include <math.h>
 
-#define STAR_COUNT 200
+#define STAR_COUNT 20000
 #define MAX_TREES  30
+#define MAX_PARTICLES 200
 
 typedef struct Tree {
   Rectangle trunk;
   Vector2 canopy[3];
 } Tree;
 
+typedef struct Particle {
+  Vector2 pos;
+  Vector2 vel;
+  float size;
+  float life;
+  Color color;
+} Particle;
+
+Particle particles[MAX_PARTICLES];
 
 int main(void)
 {
@@ -19,6 +29,14 @@ int main(void)
 
   Rectangle player = { 400, 280, 40, 40 };
   Rectangle floor = { -100000.0f, 400.0f, 200000.0f, 200000.0f };
+
+  float idleTimer = 0.0f;
+
+  float wobbleRotation = 0.0f;
+  float wobbleRotationVel = 0.0f;
+
+  float wobbleScaleY = 1.0f;
+  float wobbleScaleVel = 0.0f;
 
   float velocityY = 0.0f;
   float velocityX = 0.0f;
@@ -87,6 +105,8 @@ int main(void)
     float dt = GetFrameTime();
     if (dt > 1.0f/60.0f) dt = 1.0f/60.0f;
 
+    idleTimer += dt;
+
     velocityX = 0.0f;
     if (IsKeyDown(KEY_A)) velocityX -= moveSpeed;
     if (IsKeyDown(KEY_D)) velocityX += moveSpeed;
@@ -118,6 +138,64 @@ int main(void)
       player.y + player.height/2.0f
     };
 
+    float targetRot = velocityX * 0.05f;
+    float rotSpring = 8.0f;
+    float rotDamp = 5.0f;
+    float rotAccel = rotSpring * (targetRot - wobbleRotation) - rotDamp * wobbleRotationVel;
+    wobbleRotationVel += rotAccel * dt;
+    wobbleRotation += wobbleRotationVel * dt;
+
+    float targetScaleY = 1.0f - velocityY * 0.001f;
+    float scaleSpring = 12.0f;
+    float scaleDamp = 6.0f;
+    float scaleAccel = scaleSpring * (targetScaleY - wobbleScaleY) - scaleDamp * wobbleScaleVel;
+    wobbleScaleVel += scaleAccel * dt;
+    wobbleScaleY += wobbleScaleVel * dt;
+
+    for (int i = 0; i < 3; i++)
+{
+    for (int j = 0; j < MAX_PARTICLES; j++)
+    {
+        if (particles[j].life <= 0.0f)
+        {
+            particles[j].pos = (Vector2){
+                player.x + player.width/2.0f + GetRandomValue(-10,10),
+                player.y + player.height/2.0f + GetRandomValue(-10,10)
+            };
+            float speed = (float)GetRandomValue(20, 80);
+            float angle = GetRandomValue(0, 360) * (3.14159f / 180.0f);
+            particles[j].vel = (Vector2){ cosf(angle) * speed, sinf(angle) * speed };
+            particles[j].size = GetRandomValue(2, 5);
+            particles[j].life = GetRandomValue(40, 80)/100.0f;
+            particles[j].color = (Color){ 180, 50, 255, 255 };
+            break;
+        }
+    }
+}
+
+    for (int i = 0; i < MAX_PARTICLES; i++)
+{
+    if (particles[i].life > 0.0f)
+    {
+        particles[i].pos.x += particles[i].vel.x * dt;
+        particles[i].pos.y += particles[i].vel.y * dt;
+
+        particles[i].vel.x *= 0.95f;
+        particles[i].vel.y *= 0.95f;
+
+        particles[i].life -= dt;
+    }
+}
+
+    float idleAmplitude = 5.0f;
+    float idleSpeed = 2.0f;
+
+    float idleOffset = 0.0f;
+    if (grounded && velocityX == 0.0f)
+    {
+      idleOffset = sinf(idleTimer * idleSpeed) * idleAmplitude;
+    }
+
     BeginDrawing();
         ClearBackground(BLACK);
 
@@ -132,9 +210,26 @@ int main(void)
             for (int i = 0; i < STAR_COUNT; i++)
                 DrawPixelV(stars[i], RAYWHITE);
 
-        DrawRectangleRec(player, RED);
+        for (int i = 0; i < MAX_PARTICLES; i++)
+        {
+            if (particles[i].life > 0.0f)
+            {
+                float alpha = particles[i].life / 0.8f;
+                Color c = particles[i].color;
+                c.a = (unsigned char)(alpha * 255);
+                DrawCircleV(particles[i].pos, particles[i].size, c);
+              }
+          }
 
-        DrawRectangleLinesEx(player, 1.0f, BLACK);
+        Vector2 playerCenter = { player.x + player.width/2.0f, player.y + player.height/2.0f + idleOffset };
+
+        DrawRectanglePro(
+            (Rectangle){ player.x, player.y + idleOffset, player.width, player.height },
+            (Vector2){ player.width/2.0f, player.height/2.0f },
+            wobbleRotation,
+            RED
+          );
+
 
         DrawRectangleRec(floor, GREEN);
 
